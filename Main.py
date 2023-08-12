@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import filedialog
 from PIL import Image, ImageTk
 
-RATINGS_FILE = "C:/Users/smast/OneDrive/Desktop/Code Projects/PhotoRanker/elo_ratings.json"
+RATINGS_FILE = "elo_ratings.json"
 TOP_RANK_COUNT = 5
 
 def get_images_from_folder(folder_path):
@@ -30,7 +30,7 @@ def select_winner(left_win):
     loser = image2 if left_win else image1
     filename_winner = os.path.basename(winner)
     filename_loser = os.path.basename(loser)
-    elo_ratings[filename_winner], elo_ratings[filename_loser] = update_elo_rank(elo_ratings[filename_winner], elo_ratings[filename_loser])
+    elo_ratings[filename_winner]['rating'], elo_ratings[filename_loser]['rating'] = update_elo_rank(elo_ratings[filename_winner]['rating'], elo_ratings[filename_loser]['rating'])
     show_next_images()
 
 def show_next_images():
@@ -76,27 +76,55 @@ def save_ratings():
 def load_ratings():
     if os.path.exists(RATINGS_FILE):
         with open(RATINGS_FILE, 'r') as file:
-            return json.load(file)
+            loaded_ratings = json.load(file)
+            # Normalize the loaded ratings
+            for key, value in loaded_ratings.items():
+                if isinstance(value, (int, float)):
+                    loaded_ratings[key] = {'path': '', 'rating': value}
+            return loaded_ratings
     return {}
 
 def view_rankings():
     ranking_window = tk.Toplevel(root)
     ranking_window.title('Image Rankings')
-    for image, rating in sorted(elo_ratings.items(), key=lambda x: x[1], reverse=True):
-        tk.Label(ranking_window, text=f'{image}: {rating}').pack()
+    for image, details in sorted(elo_ratings.items(), key=lambda x: x[1]['rating'], reverse=True):
+        tk.Label(ranking_window, text=f'{image} - {details["path"]}: {details["rating"]}').pack()
 
 def view_top_ranked():
     top_rank_window = tk.Toplevel(root)
     top_rank_window.title('Top Ranked Images')
-    for image, rating in sorted(elo_ratings.items(), key=lambda x: x[1], reverse=True)[:TOP_RANK_COUNT]:
-        img_path = [img for img in images if os.path.basename(img) == image][0]
-        img = Image.open(img_path)
-        img = resize_image(img, image_width, image_height)
-        photo = ImageTk.PhotoImage(img)
-        image_label = tk.Label(top_rank_window, image=photo)
-        image_label.image = photo
-        image_label.pack()
-        tk.Label(top_rank_window, text=f'Rating: {rating}').pack()
+    
+    # Create a canvas inside the top_rank_window
+    canvas = tk.Canvas(top_rank_window)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    
+    # Add a scrollbar to the canvas
+    scrollbar = tk.Scrollbar(top_rank_window, command=canvas.yview)
+    scrollbar.pack(side=tk.LEFT, fill=tk.Y)
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    # Create a frame inside the canvas
+    frame = tk.Frame(canvas)
+    canvas.create_window((0, 0), window=frame, anchor='nw')
+
+    for filename, details in sorted(elo_ratings.items(), key=lambda x: x[1]['rating'], reverse=True)[:TOP_RANK_COUNT]:
+        img_path = details["path"]
+        rating = round(details["rating"])  # Round the rating to the nearest integer
+        if os.path.exists(img_path):  # Check if the image file exists
+            img = Image.open(img_path)
+            img = resize_image(img, image_width, image_height)
+            photo = ImageTk.PhotoImage(img)
+            image_label = tk.Label(frame, image=photo)
+            image_label.image = photo
+            image_label.pack()
+            tk.Label(frame, text=f'Rating: {rating}').pack()  # Use the rounded rating
+        else:
+            tk.Label(frame, text=f'{filename} not found. Rating: {rating}').pack()  # Use the rounded rating
+            
+    # Update the scroll region to match the size of the frame
+    frame.update_idletasks()
+    canvas.config(scrollregion=canvas.bbox("all"))
+
 
 def quit_program():
     save_ratings()
@@ -107,7 +135,9 @@ images = get_images_from_folder(folder_path)
 elo_ratings = load_ratings()
 for image in images:
     filename = os.path.basename(image)
-    elo_ratings[filename] = elo_ratings.get(filename, 1200)
+    existing_entry = elo_ratings.get(filename, {'rating': 1200})
+    existing_rating = existing_entry if isinstance(existing_entry, (int, float)) else existing_entry.get('rating', 1200)
+    elo_ratings[filename] = {'path': image, 'rating': existing_rating}
 image1, image2 = None, None
 image_width, image_height = 800, 600
 
