@@ -4,18 +4,29 @@ import json
 import tkinter as tk
 from tkinter import filedialog
 from PIL import Image, ImageTk
+import rawpy
+import numpy as np
 
 RATINGS_FILE = "elo_ratings.json"
 TOP_RANK_COUNT = 10
 unrated_label = None
 
+def open_image(img_path):
+    # Check if the image is a DNG file, and use rawpy to open it if so
+    if img_path.lower().endswith('.dng'):
+        with rawpy.imread(img_path) as raw:
+            return Image.fromarray(raw.postprocess())
+    else:
+        return Image.open(img_path)
 
 def get_images_from_folder(folder_path):
+    print("Getting images from folder...")  # Debug print
     images = []
     for subdir, _, files in os.walk(folder_path):
         for file in files:
-            if file.endswith(('jpg', 'png', 'jpeg')):
+            if file.endswith(('jpg', 'png', 'jpeg', 'dng')):  # Include 'dng' in the tuple
                 images.append(os.path.join(subdir, file))
+    print(f"Found {len(images)} images.")  # Debug print
     return images
 
 def update_elo_rank(winner_elo, loser_elo):
@@ -44,11 +55,9 @@ def show_next_images():
     image2 = random.choice([img for img in weighted_images if img != image1])
     update_images(image1, image2)
     
-    # Count the number of unrated images (those with the default rating)
-    unrated_count = sum(1 for details in elo_ratings.values() if details['rating'] == 1200)
-    unrated_label.config(text=f"Unrated Images: {unrated_count}")  # Update the unrated_label with the count
-
-
+    # Count the number of unrated images (those with the default rating) in the current folder
+    unrated_count = sum(1 for img in images if elo_ratings[os.path.basename(img)]['rating'] == 1200)
+    unrated_label.config(text=f"Unrated Images in Current Folder: {unrated_count}")  # Update the unrated_label with the count
 
 def resize_image(img, width, height):
     img_ratio = img.width / img.height
@@ -62,8 +71,9 @@ def resize_image(img, width, height):
     return img.resize((new_width, new_height), Image.LANCZOS)
 
 def update_images(img1, img2):
-    left_img = Image.open(img1)
-    right_img = Image.open(img2)
+    left_img = open_image(img1)
+    right_img = open_image(img2)
+    
     left_img = resize_image(left_img, image_width, image_height)
     right_img = resize_image(right_img, image_width, image_height)
     left_photo = ImageTk.PhotoImage(left_img)
@@ -123,7 +133,7 @@ def view_top_ranked():
         img_path = details["path"]
         rating = round(details["rating"])  # Round the rating to the nearest integer
         if os.path.exists(img_path):  # Check if the image file exists
-            img = Image.open(img_path)
+            img = open_image(img_path)  # Use open_image function here
             img = resize_image(img, image_width, image_height)
             photo = ImageTk.PhotoImage(img)
             image_label = tk.Label(frame, image=photo)
@@ -143,8 +153,10 @@ def quit_program():
     root.quit()
 
 folder_path = filedialog.askdirectory(title='Select a folder containing images')
+print(f"Selected folder: {folder_path}")  # Debug print
 images = get_images_from_folder(folder_path)
 elo_ratings = load_ratings()
+print("Loaded ratings.")  # Debug print
 for image in images:
     filename = os.path.basename(image)
     existing_entry = elo_ratings.get(filename, {'rating': 1200})
@@ -183,4 +195,5 @@ root.bind('<Right>', on_key)
 root.bind('<Escape>', on_key)
 
 show_next_images()
+print("Running main loop...")  # Debug print
 root.mainloop()
