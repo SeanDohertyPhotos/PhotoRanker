@@ -6,7 +6,9 @@ from tkinter import filedialog
 from PIL import Image, ImageTk
 
 RATINGS_FILE = "elo_ratings.json"
-TOP_RANK_COUNT = 5
+TOP_RANK_COUNT = 10
+unrated_label = None
+
 
 def get_images_from_folder(folder_path):
     images = []
@@ -23,6 +25,7 @@ def update_elo_rank(winner_elo, loser_elo):
     winner_elo += K * (1 - expected_winner)
     loser_elo += K * (0 - expected_loser)
     return winner_elo, loser_elo
+    save_ratings()
 
 def select_winner(left_win):
     global image1, image2
@@ -35,8 +38,17 @@ def select_winner(left_win):
 
 def show_next_images():
     global image1, image2
-    image1, image2 = random.sample(images, 2)
+    # Sort the images based on their rating, and select two images with a bias towards higher ratings
+    weighted_images = sorted(images, key=lambda img: elo_ratings[os.path.basename(img)]['rating'], reverse=True)
+    image1 = random.choices(weighted_images, weights=[i + 1 for i in range(len(weighted_images))], k=1)[0]
+    image2 = random.choice([img for img in weighted_images if img != image1])
     update_images(image1, image2)
+    
+    # Count the number of unrated images (those with the default rating)
+    unrated_count = sum(1 for details in elo_ratings.values() if details['rating'] == 1200)
+    unrated_label.config(text=f"Unrated Images: {unrated_count}")  # Update the unrated_label with the count
+
+
 
 def resize_image(img, width, height):
     img_ratio = img.width / img.height
@@ -162,6 +174,9 @@ view_top_button = tk.Button(button_frame, text="View Top Ranked", command=view_t
 view_top_button.pack(side=tk.LEFT, padx=5)
 quit_button = tk.Button(button_frame, text="Quit", command=quit_program, bg='gray', fg='white')
 quit_button.pack(side=tk.LEFT, padx=5)
+
+unrated_label = tk.Label(root, text="Unrated Images:", bg='black', fg='white')
+unrated_label.pack(side=tk.BOTTOM, pady=5)
 
 root.bind('<Left>', on_key)
 root.bind('<Right>', on_key)
