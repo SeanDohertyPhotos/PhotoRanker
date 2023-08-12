@@ -1,8 +1,12 @@
 import os
 import random
+import json
 import tkinter as tk
 from tkinter import filedialog
 from PIL import Image, ImageTk
+
+RATINGS_FILE = "C:/Users/smast/OneDrive/Desktop/Code Projects/PhotoRanker/elo_ratings.json"
+TOP_RANK_COUNT = 5
 
 def get_images_from_folder(folder_path):
     images = []
@@ -22,10 +26,11 @@ def update_elo_rank(winner_elo, loser_elo):
 
 def select_winner(left_win):
     global image1, image2
-    if left_win:
-        elo_ratings[image1], elo_ratings[image2] = update_elo_rank(elo_ratings[image1], elo_ratings[image2])
-    else:
-        elo_ratings[image2], elo_ratings[image1] = update_elo_rank(elo_ratings[image2], elo_ratings[image1])
+    winner = image1 if left_win else image2
+    loser = image2 if left_win else image1
+    filename_winner = os.path.basename(winner)
+    filename_loser = os.path.basename(loser)
+    elo_ratings[filename_winner], elo_ratings[filename_loser] = update_elo_rank(elo_ratings[filename_winner], elo_ratings[filename_loser])
     show_next_images()
 
 def show_next_images():
@@ -33,14 +38,22 @@ def show_next_images():
     image1, image2 = random.sample(images, 2)
     update_images(image1, image2)
 
+def resize_image(img, width, height):
+    img_ratio = img.width / img.height
+    target_ratio = width / height
+    if img_ratio > target_ratio:
+        new_width = width
+        new_height = int(width / img_ratio)
+    else:
+        new_height = height
+        new_width = int(height * img_ratio)
+    return img.resize((new_width, new_height), Image.LANCZOS)
+
 def update_images(img1, img2):
-    global image_width, image_height
-    actual_width = max(image_width, 100)  # Ensure the width is at least 100
-    actual_height = max(image_height, 100) # Ensure the height is at least 100
     left_img = Image.open(img1)
     right_img = Image.open(img2)
-    left_img.thumbnail((actual_width, actual_height))
-    right_img.thumbnail((actual_width, actual_height))
+    left_img = resize_image(left_img, image_width, image_height)
+    right_img = resize_image(right_img, image_width, image_height)
     left_photo = ImageTk.PhotoImage(left_img)
     right_photo = ImageTk.PhotoImage(right_img)
     left_label.config(image=left_photo)
@@ -56,45 +69,73 @@ def on_key(event):
     elif event.keysym == 'Escape':
         quit_program()
 
-def on_resize(event):
-    global image_width, image_height
-    image_width = max(event.width // 2 - 20, 100) # Ensure the width is at least 100
-    image_height = max(event.height - 20, 100)    # Ensure the height is at least 100
-    update_images(image1, image2)
+def save_ratings():
+    with open(RATINGS_FILE, 'w') as file:
+        json.dump(elo_ratings, file)
+
+def load_ratings():
+    if os.path.exists(RATINGS_FILE):
+        with open(RATINGS_FILE, 'r') as file:
+            return json.load(file)
+    return {}
+
+def view_rankings():
+    ranking_window = tk.Toplevel(root)
+    ranking_window.title('Image Rankings')
+    for image, rating in sorted(elo_ratings.items(), key=lambda x: x[1], reverse=True):
+        tk.Label(ranking_window, text=f'{image}: {rating}').pack()
+
+def view_top_ranked():
+    top_rank_window = tk.Toplevel(root)
+    top_rank_window.title('Top Ranked Images')
+    for image, rating in sorted(elo_ratings.items(), key=lambda x: x[1], reverse=True)[:TOP_RANK_COUNT]:
+        img_path = [img for img in images if os.path.basename(img) == image][0]
+        img = Image.open(img_path)
+        img = resize_image(img, image_width, image_height)
+        photo = ImageTk.PhotoImage(img)
+        image_label = tk.Label(top_rank_window, image=photo)
+        image_label.image = photo
+        image_label.pack()
+        tk.Label(top_rank_window, text=f'Rating: {rating}').pack()
 
 def quit_program():
+    save_ratings()
     root.quit()
-    for image, rating in sorted(elo_ratings.items(), key=lambda x: x[1], reverse=True):
-        print(f'{image}: {rating}')
 
 folder_path = filedialog.askdirectory(title='Select a folder containing images')
 images = get_images_from_folder(folder_path)
-elo_ratings = {image: 1200 for image in images}
+elo_ratings = load_ratings()
+for image in images:
+    filename = os.path.basename(image)
+    elo_ratings[filename] = elo_ratings.get(filename, 1200)
 image1, image2 = None, None
-image_width, image_height = 400, 400
+image_width, image_height = 800, 600
 
 root = tk.Tk()
 root.title('Image Ranking')
 root.configure(bg='black')
-root.attributes('-fullscreen', True)  # Set the window to fullscreen
-root.resizable(False, False)  # Prevent resizing
+root.state('zoomed')
+
 left_label = tk.Label(root, bg='black')
-left_label.pack(side=tk.LEFT, padx=10, pady=10)
+left_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 right_label = tk.Label(root, bg='black')
-right_label.pack(side=tk.RIGHT, padx=10, pady=10)
+right_label.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 button_frame = tk.Frame(root, bg='black')
 button_frame.pack(side=tk.BOTTOM, pady=10)
 left_button = tk.Button(button_frame, text="Left", command=lambda: select_winner(True), bg='gray', fg='white')
 left_button.pack(side=tk.LEFT, padx=5)
 right_button = tk.Button(button_frame, text="Right", command=lambda: select_winner(False), bg='gray', fg='white')
 right_button.pack(side=tk.LEFT, padx=5)
+view_ranking_button = tk.Button(button_frame, text="View Rankings", command=view_rankings, bg='gray', fg='white')
+view_ranking_button.pack(side=tk.LEFT, padx=5)
+view_top_button = tk.Button(button_frame, text="View Top Ranked", command=view_top_ranked, bg='gray', fg='white')
+view_top_button.pack(side=tk.LEFT, padx=5)
 quit_button = tk.Button(button_frame, text="Quit", command=quit_program, bg='gray', fg='white')
 quit_button.pack(side=tk.LEFT, padx=5)
 
 root.bind('<Left>', on_key)
 root.bind('<Right>', on_key)
 root.bind('<Escape>', on_key)
-root.bind('<Configure>', on_resize)
 
 show_next_images()
 root.mainloop()
