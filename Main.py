@@ -7,6 +7,7 @@ from PIL import Image, ImageTk, ImageEnhance
 import rawpy
 from queue import Queue
 from threading import Thread
+import inputs  # New import for Xbox controller support
 
 RATINGS_FILE = "elo_ratings.json"
 BLACKLIST_FILE = "blacklist.json"
@@ -252,6 +253,30 @@ def create_styled_button(parent, text, command):
                      activebackground="#45a049", activeforeground="white", 
                      relief=tk.FLAT, padx=20, pady=10, font=("Helvetica", 12))
 
+# New function to handle Xbox controller input
+def handle_controller_input():
+    while True:
+        try:
+            events = inputs.get_gamepad()
+            for event in events:
+                if event.code == 'BTN_SOUTH' and event.state == 1:  # A button
+                    root.event_generate('<<ControllerLeft>>')
+                elif event.code == 'BTN_EAST' and event.state == 1:  # B button
+                    root.event_generate('<<ControllerRight>>')
+                elif event.code == 'BTN_WEST' and event.state == 1:  # X button
+                    root.event_generate('<<ControllerBlacklistLeft>>')
+                elif event.code == 'BTN_NORTH' and event.state == 1:  # Y button
+                    root.event_generate('<<ControllerBlacklistRight>>')
+        except inputs.UnpluggedError:
+            # No gamepad found, sleep for a while before trying again
+            import time
+            time.sleep(1)
+        except Exception as e:
+            print(f"Unexpected error in controller input: {e}")
+            # Sleep to avoid tight loop if persistent error
+            import time
+            time.sleep(1)
+
 # Main program
 folder_path = filedialog.askdirectory(title='Select a folder containing images')
 images = get_images_from_folder(folder_path)
@@ -271,6 +296,16 @@ for image in images:
 image_width, image_height = 800, 600
 preloaded_images = Queue(maxsize=5)
 Thread(target=preload_images, daemon=True).start()
+
+# Start the controller input thread
+Thread(target=handle_controller_input, daemon=True).start()
+
+try:
+    Thread(target=handle_controller_input, daemon=True).start()
+    print("Xbox controller support enabled. Connect a controller to use it.")
+except Exception as e:
+    print(f"Could not initialize Xbox controller support: {e}")
+    print("Continuing without controller support. Use keyboard controls.")
 
 root = tk.Tk()
 root.title('Image Ranking')
@@ -316,6 +351,13 @@ progress_frame.pack(side=tk.BOTTOM, fill=tk.X)
 progress_bar = ttk.Progressbar(progress_frame, orient=tk.HORIZONTAL, length=100, mode='determinate')
 progress_bar.pack(fill=tk.X, padx=20, pady=10)
 
+# Bind controller events
+root.bind('<<ControllerLeft>>', lambda e: select_winner(True))
+root.bind('<<ControllerRight>>', lambda e: select_winner(False))
+root.bind('<<ControllerBlacklistLeft>>', lambda e: blacklist_and_replace_image(True))
+root.bind('<<ControllerBlacklistRight>>', lambda e: blacklist_and_replace_image(False))
+
+# Existing key bindings
 root.bind('<Left>', on_key)
 root.bind('<Right>', on_key)
 root.bind('<z>', on_key)
